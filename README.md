@@ -29,6 +29,9 @@
 * /bg save - saves your own blueprints
 * /bg restore - restore your own blueprints
 
+#Permissions:
+* blueprintguardian.use
+* blueprintguardian.admin
 
 
 # Auto restore:
