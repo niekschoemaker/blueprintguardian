@@ -32,4 +32,5 @@
 
 
 **Auto restore:**
+
 If the plugin is turned on and autoRestore is also turned on (by default both of these are off) the plugin will automatically detect if there's a new wipe and restore the blueprints of the players with the blueprintguardian.use permission.
