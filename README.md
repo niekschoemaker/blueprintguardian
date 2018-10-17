@@ -24,9 +24,11 @@
 * bg help - Gives a list of commands.
 
 
+
 **Chat Commands:**
 * /bg save - saves your own blueprints
 * /bg restore - restore your own blueprints
+
 
 
 **Auto restore:**
