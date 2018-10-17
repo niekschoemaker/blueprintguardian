@@ -1,4 +1,4 @@
-**Features:**
+# Features:
 * Can save blueprints on player disconnect (if they have blueprintguardian.use)
 * Can restore blueprints automatically after a forced wipe.
 * Give notifications that a player has saved data after a wipe (if auto restore is turned off)
@@ -10,7 +10,7 @@
 
 *Note:* I locked most commands to edit other players behind permissions on the target. Chat commands are only for restoring and saving your own blueprints.
 
-**Console Commands:**
+# Console Commands:
 * bg save <playername> - save the blueprints of the specified player.
 * bg restore <playername> - restore the blueprints of the specified player.
 * bg delsaved <playername> - deletes the saved blueprints of the specified player.
@@ -25,12 +25,12 @@
 
 
 
-**Chat Commands:**
+# Chat Commands:
 * /bg save - saves your own blueprints
 * /bg restore - restore your own blueprints
 
 
 
-**Auto restore:**
+# Auto restore:
 
 If the plugin is turned on and autoRestore is also turned on (by default both of these are off) the plugin will automatically detect if there's a new wipe and restore the blueprints of the players with the blueprintguardian.use permission.
