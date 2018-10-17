@@ -7,7 +7,8 @@
 * Reset the blueprints of a player.
 * Full language support.
 
-*Note:* I locked most commands to edit other players behind permissions on the target. And also console commands only for now, chat commands are only for restoring and saving your own blueprints.
+
+*Note:* I locked most commands to edit other players behind permissions on the target. Chat commands are only for restoring and saving your own blueprints.
 
 **Console Commands:**
 * bg save <playername> - save the blueprints of the specified player.
@@ -22,9 +23,11 @@
 * bg autorestore - turns autorestore on and off
 * bg help - Gives a list of commands.
 
+
 **Chat Commands:**
 * /bg save - saves your own blueprints
 * /bg restore - restore your own blueprints
+
 
 **Auto restore:**
 If the plugin is turned on and autoRestore is also turned on (by default both of these are off) the plugin will automatically detect if there's a new wipe and restore the blueprints of the players with the blueprintguardian.use permission.
