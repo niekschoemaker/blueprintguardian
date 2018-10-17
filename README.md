@@ -10,7 +10,8 @@
 
 *Note:* I locked most commands to edit other players behind permissions on the target. Chat commands are only for restoring and saving your own blueprints.
 
-# Console Commands:
+# Commands:
+**Console**
 * bg save <playername> - save the blueprints of the specified player.
 * bg restore <playername> - restore the blueprints of the specified player.
 * bg delsaved <playername> - deletes the saved blueprints of the specified player.
@@ -23,9 +24,7 @@
 * bg autorestore - turns autorestore on and off
 * bg help - Gives a list of commands.
 
-
-
-# Chat Commands:
+**Chat**
 * /bg save - saves your own blueprints
 * /bg restore - restore your own blueprints
 
