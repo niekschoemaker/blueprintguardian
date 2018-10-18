@@ -6,7 +6,7 @@ using Oxide.Game.Rust;
 
 namespace Oxide.Plugins
 {
-    [Info("Blueprint Guardian", "Misstake", "0.1.1")]
+    [Info("Blueprint Guardian", "Misstake", "0.1.2")]
     [Description("Saves blueprints and enables you to give them back to players, even after forced wipes.")]
 
     class BlueprintGuardian : RustPlugin
@@ -15,7 +15,7 @@ namespace Oxide.Plugins
         private bool _debug;
         private bool _autoRestore;
         private bool _isActivated;
-        private bool _isNewSave = false;
+        private bool _isNewSave;
         private bool _targetNeedsPermission;
         int _authLevel = 1;
         private DynamicConfigFile _blueprintData;
@@ -26,14 +26,13 @@ namespace Oxide.Plugins
 
         #region Hooks
 
-        private void Loaded()
+        private void Init()
         {
             _blueprintData = Interface.Oxide.DataFileSystem.GetFile("BlueprintGuardian");
         }
 
         private void OnServerInitialized()
         {
-            LoadDefaultMessages();
             permission.RegisterPermission("blueprintguardian.use", this);
             permission.RegisterPermission("blueprintguardian.admin", this);
             CheckProtocol();
@@ -54,7 +53,7 @@ namespace Oxide.Plugins
         
         private void OnPlayerDisconnected(BasePlayer player)
         {
-            if(IsUser(player))
+            if(IsUser(player.UserIDString))
             {
                 if (_cachedPlayerInfo.ContainsKey(player.userID) && _cachedPlayerInfo[player.userID].RestoreOnce)
                 {
@@ -68,7 +67,7 @@ namespace Oxide.Plugins
 
         private void OnPlayerInit(BasePlayer player)
         {
-            if(IsUser(player))
+            if(IsUser(player.UserIDString))
             {
                 if (!_isActivated)
                     return;
@@ -77,10 +76,10 @@ namespace Oxide.Plugins
                     if (_autoRestore)
                     {
                         RestoreBlueprints(player);
-                        PrintToChat(player, Lang(player, "BlueprintsRestoredOwn"));
+                        PrintToChat(player, Lang("BlueprintsRestoredOwn", player.UserIDString));
                     }
                     else
-                        PrintToChat(player, Lang(player, "NewWipe"));
+                        PrintToChat(player, Lang("NewWipe", player.UserIDString));
                     
                 }
             }
@@ -88,79 +87,21 @@ namespace Oxide.Plugins
         #endregion
 
         #region Functions
-        private bool IsUser(BasePlayer player)
+        private bool IsUser(string id)
         {
-            if (permission.UserHasPermission(player.UserIDString, "blueprintguardian.use"))
+            if (permission.UserHasPermission(id, "blueprintguardian.use"))
                 return true;
 
             return false;
         }
 
-        private bool IsUser(ulong userID)
+        private bool IsAdmin(string userId)
         {
-            if (permission.UserHasPermission(Convert.ToString(userID), "blueprintguardian.use"))
-                return true;
+            BasePlayer target = RustCore.FindPlayerByIdString(userId);
+            if (target == null)
+                return permission.UserHasPermission(userId, "blueprintguardian.admin");
 
-            return false;
-        }
-
-        private bool IsAdmin(BasePlayer player)
-        {
-            if (permission.UserHasPermission(player.UserIDString, "blueprintguardian.admin") || player.IsAdmin)
-                return true;
-
-            return false;
-        }
-
-        private bool IsAdmin(ulong userID)
-        {
-            BasePlayer target = RustCore.FindPlayerById(userID);
-            if (target != null)
-                return IsAdmin(target);
-            if (permission.UserHasPermission(Convert.ToString(userID), "blueprintguardian.admin"))
-                return true;
-
-            return false;
-        }
-
-        private List<BasePlayer> GetBasePlayers (bool sleepers = true)
-        {
-            List<BasePlayer> playerList = BasePlayer.activePlayerList;
-            if (sleepers)
-                playerList.AddRange(BasePlayer.sleepingPlayerList);
-            if (playerList == null)
-            {
-                Puts("No players found");
-                return new List<BasePlayer>();
-            }
-            return playerList;
-        }
-        
-        private BasePlayer FindPlayer(BasePlayer player, string nameOrID, bool sleepers = false)
-        {
-            var targets = BasePlayer.activePlayerList.FindAll(x => nameOrID.IsSteamId() ? x.UserIDString == nameOrID : x.displayName.ToLower().Contains(nameOrID));
-            if(sleepers && targets.Count == 0)
-                targets.AddRange(BasePlayer.sleepingPlayerList.FindAll(x => nameOrID.IsSteamId() ? x.UserIDString == nameOrID : x.displayName.ToLower().Contains(nameOrID)));
-
-            if (targets.Count == 1)
-                return targets[0];
-
-            //PrintToChat(player, Lang(player, targets.Count == 0 ? "NoPlayerFound" : "MultiplePlayersFound"), nameOrID);
-            SendReply(player, targets.Count == 0 ? Lang("NoPlayerFound") : Lang("MultiplePlayersFound"));
-            SendReply(player, Convert.ToString(targets.Count));
-            return null;
-        }
-
-        private BasePlayer FindPlayer(ConsoleSystem.Arg arg, string nameOrID, bool sleepers = false)
-        {
-            var targets = BasePlayer.activePlayerList.FindAll(x => nameOrID.IsSteamId() ? x.UserIDString == nameOrID : x.displayName.ToLower().Contains(nameOrID));
-            if(sleepers && targets.Count == 0)
-                targets.AddRange(BasePlayer.sleepingPlayerList.FindAll(x => nameOrID.IsSteamId() ? x.UserIDString == nameOrID : x.displayName.ToLower().Contains(nameOrID)));
-            if (targets.Count == 1)
-                return targets[0];
-
-            SendReply(arg, targets.Count == 0 ? Lang("NoPlayerFoundWith", arg.Args[1]) : Lang("MultiplePlayersFoundWith", arg.Args[1]));
-            return null;
+            return permission.UserHasPermission(userId, "blueprintguardian.admin") || target.IsAdmin;
         }
 
         private List<String> GetPlayerBlueprints(BasePlayer player)
@@ -181,26 +122,25 @@ namespace Oxide.Plugins
 
         }
 
-        private bool SaveBlueprints(BasePlayer player)
+        private void SaveBlueprints(BasePlayer player)
         {
             List<String> blueprints = GetPlayerBlueprints(player);
             if (blueprints == null)
             {
                 SendWarning(null, "no blueprints object found for player.");
-                return false;
+                return;
             }
             if (!_cachedPlayerInfo.ContainsKey(player.userID))
                 _cachedPlayerInfo.Add(player.userID, new PlayerInfo());
             _cachedPlayerInfo[player.userID].UnlockedBlueprints = blueprints;
             SaveData();
-            return true;
         }
 
-        private bool RestoreBlueprints(BasePlayer player)
+        private void RestoreBlueprints(BasePlayer player)
         {
             if (!_cachedPlayerInfo.ContainsKey(player.userID))
             {
-                return false;
+                return;
             }
 
             foreach (String blueprint in _cachedPlayerInfo[player.userID].UnlockedBlueprints)
@@ -217,7 +157,6 @@ namespace Oxide.Plugins
             }
 
             Puts($"Blueprints restored for {player.displayName} : {player.UserIDString}");
-            return true;
         }
 
         private bool RemoveSavedBlueprints(BasePlayer player)
@@ -233,6 +172,7 @@ namespace Oxide.Plugins
 
         private void CheckProtocol()
         {
+            Interface.Oxide.DataFileSystem.WriteObject("BlueprintGuardian_bak", _bgData);
             if (_isNewSave)
             {
                 foreach (var entry in _cachedPlayerInfo)
@@ -246,17 +186,17 @@ namespace Oxide.Plugins
 
         #region commands
         [ChatCommand("bg")]
-        private void bgChatCommand(BasePlayer player, string command, string[] args)
+        private void BgChatCommand(BasePlayer player, string command, string[] args)
         {
-            if(!IsAdmin(player) && !IsUser(player))
+            if(!IsAdmin(player.UserIDString) && !IsUser(player.UserIDString))
             {
-                SendReply(player, Lang(player, "NoPermission"));
+                SendReply(player, Lang("NoPermission", player.UserIDString));
                 return;
             }
 
             if(args == null)
             {
-                SendReply(player, Lang(player, "InvalidArgsChat"));
+                SendReply(player, Lang("InvalidArgsChat", player.UserIDString));
                 return;
             }
 
@@ -266,34 +206,35 @@ namespace Oxide.Plugins
                 {
                     case "save":
                         SaveBlueprints(player);
-                        SendReply(player, Lang(player, "BlueprintsSavedOwn"));
+                        SendReply(player, Lang("BlueprintsSavedOwn", player.UserIDString));
                         return;
                     case "restore":
                         RestoreBlueprints(player);
-                        SendReply(player, Lang(player, "BlueprintsRestoredOwn"));
+                        SendReply(player, Lang("BlueprintsRestoredOwn", player.UserIDString));
                         return;
                     case "default":
-                        SendReply(player, Lang(player, "InvalidArgsChat"));
+                        SendReply(player, Lang("InvalidArgsChat", player.UserIDString));
                         return;
                 }
             }
         }
 
         [ConsoleCommand("bg")]
-        private void bgConsoleCommand(ConsoleSystem.Arg arg)
+        private void BgConsoleCommand(ConsoleSystem.Arg arg)
         {
+            string userIdString = arg.Connection?.userid.ToString();
             if (arg.Connection != null)
             {
-                if (arg.Connection.authLevel < _authLevel && !IsAdmin(arg.Connection.userid))
+                if (arg.Connection.authLevel < _authLevel && !IsAdmin(arg.Connection.userid.ToString()))
                 {
-                    SendReply(arg, Lang(arg, "NoPermission"));
+                    SendReply(arg, Lang("NoPermission", userIdString));
                     return;
                 }
             }
 
             if(arg.Args == null || arg.Args.Length == 0)
             {
-                SendReply(arg, Lang(arg, "InvalidArgsConsole"));
+                SendReply(arg, Lang("InvalidArgsConsole", userIdString));
                 return;
             }
 
@@ -305,10 +246,14 @@ namespace Oxide.Plugins
                     case "unlocked":
                         if (arg.Args.Length == 2)
                         {
-                            BasePlayer target = FindPlayer(arg, arg.Args[1], true);
+                            BasePlayer target = RustCore.FindPlayer(arg.Args[1]);
                             if (target == null || target.blueprints == null)
+                            {
+                                SendReply(arg, Lang("NoPlayerFoundWith", userIdString, arg.Args[1]));
                                 return;
-                            String replyString = Lang(arg, "BlueprintsUnlocked", target.displayName);
+                            }
+
+                            String replyString = Lang("BlueprintsUnlocked", userIdString, target.displayName);
                             foreach(String a in GetPlayerBlueprints(target))
                             {
                                 replyString += a + ", ";
@@ -321,66 +266,46 @@ namespace Oxide.Plugins
                     case "save":
                         if (arg.Args.Length == 2)
                         {
-                            BasePlayer target = FindPlayer(arg, arg.Args[1], true);
-                            if (target == null) return;
-                            if (_targetNeedsPermission && !IsAdmin(target) && !IsUser(target))
+                            BasePlayer target = RustCore.FindPlayer(arg.Args[1]);
+                            if (target == null)
                             {
-                                SendReply(arg, Lang(arg, "NoPermTarget", target.displayName));
+                                SendReply(arg, Lang("NoPlayerFoundWith", userIdString, arg.Args[1]));
+                                return;
+                            }
+                            if (_targetNeedsPermission && !IsAdmin(target.UserIDString) && !IsUser(target.UserIDString))
+                            {
+                                SendReply(arg, Lang("NoPermTarget", userIdString, target.displayName));
                                 return;
                             }
                             SaveBlueprints(target);
-                            SendReply(arg, Lang(arg, "BlueprintsSavedTarget", target.displayName));
+                            SendReply(arg, Lang("BlueprintsSavedTarget", userIdString, target.displayName));
                         }
                         return;
 
                     case "restore":
                         if (!_isActivated)
                         {
-                            SendReply(arg, Lang(arg, "PluginNotActivated"));
+                            SendReply(arg, Lang("PluginNotActivated", userIdString));
                             return;
                         }
                         if (arg.Args.Length == 2)
                         {
-                            BasePlayer target = FindPlayer(arg, arg.Args[1], true);
-                            if (target != null)
+                            BasePlayer target = RustCore.FindPlayer(arg.Args[1]);
+                            if (target == null)
                             {
-                                if (_targetNeedsPermission && !IsAdmin(target) && !IsUser(target))
-                                {
-                                    SendReply(arg, Lang(arg, "NoPermTarget", target.displayName));
-                                    return;
-                                }
-
-                                if (!_cachedPlayerInfo.ContainsKey(target.userID))
-                                {
-                                    SendReply(arg, Lang(arg, "NoSavedDataFound", target.displayName));
-                                    return;
-                                }
-
-                                var blueprints = target.blueprints;
-                                if (blueprints == null)
-                                    return;
-
-                                var count = 0;
-                                foreach (String blueprint in _cachedPlayerInfo[target.userID].UnlockedBlueprints)
-                                {
-                                    ItemDefinition itemDefinition = ItemManager.FindItemDefinition(blueprint);
-                                    blueprints.Unlock(itemDefinition);
-                                    count++;
-                                }
-                                SendReply(arg, Lang(arg, "BlueprintsRestored", target.displayName, count));
-                                Puts(Lang("BlueprintsRestored", target.displayName, count));
+                                SendReply(arg, Lang("NoPlayerFoundWith", userIdString, arg.Args[1]));
+                                return;
                             }
-                        }
-                        return;
-                    case "unlock":
-                        if (arg.Args.Length == 3)
-                        {
-                            BasePlayer target = FindPlayer(arg, arg.Args[1], true);
-                            ItemDefinition itemDefinition = ItemManager.FindItemDefinition(arg.Args[2]);
 
-                            if (itemDefinition == null)
+                            if (_targetNeedsPermission && !IsAdmin(target.UserIDString) && !IsUser(target.UserIDString))
                             {
-                                SendReply(arg, Lang(arg, "NoItemFound"));
+                                SendReply(arg, Lang("NoPermTarget", userIdString, target.displayName));
+                                return;
+                            }
+
+                            if (!_cachedPlayerInfo.ContainsKey(target.userID))
+                            {
+                                SendReply(arg, Lang("NoSavedDataFound", userIdString, target.displayName));
                                 return;
                             }
 
@@ -388,7 +313,36 @@ namespace Oxide.Plugins
                             if (blueprints == null)
                                 return;
 
-                            blueprints.Unlock(itemDefinition);
+                            var count = 0;
+                            foreach (String blueprint in _cachedPlayerInfo[target.userID].UnlockedBlueprints)
+                            {
+                                ItemDefinition itemDefinition = ItemManager.FindItemDefinition(blueprint);
+                                blueprints.Unlock(itemDefinition);
+                                count++;
+                            }
+                            SendReply(arg, Lang("BlueprintsRestored", userIdString, target.displayName, count));
+                            Puts(Lang("BlueprintsRestored", target.displayName, count));
+                        }
+                        return;
+                    case "unlock":
+                        if (arg.Args.Length == 3)
+                        {
+                            BasePlayer target = RustCore.FindPlayer(arg.Args[1]);
+                            if (target == null)
+                            {
+                                SendReply(arg, Lang("NoPlayerFoundWith", userIdString, arg.Args[1]));
+                                return;
+                            }
+
+                            ItemDefinition itemDefinition = ItemManager.FindItemDefinition(arg.Args[2]);
+
+                            if (itemDefinition == null)
+                            {
+                                SendReply(arg, Lang("NoItemFound", userIdString));
+                                return;
+                            }
+
+                            target.blueprints?.Unlock(itemDefinition);
                         }
 
                         return;
@@ -396,12 +350,44 @@ namespace Oxide.Plugins
                     case "unlockall":
                         if (arg.Args.Length == 2)
                         {
-                            BasePlayer target = FindPlayer(arg, arg.Args[1], true);
-                            if (target != null)
+                            BasePlayer target = RustCore.FindPlayer(arg.Args[1]);
+                            if (target == null)
                             {
-                                if (_targetNeedsPermission && !IsAdmin(target) && !IsUser(target))
+                                SendReply(arg, Lang("NoPlayerFoundWith", userIdString, arg.Args[1]));
+                                return;
+                            }
+
+                            if (_targetNeedsPermission && !IsAdmin(target.UserIDString) && !IsUser(target.UserIDString))
+                            {
+                                SendReply(arg, Lang("NoPermTarget", userIdString, target.displayName));
+                                return;
+                            }
+
+                            var blueprints = target.blueprints;
+                            if (blueprints == null)
+                                return;
+
+                            blueprints.UnlockAll();
+                            SendReply(arg, Lang("AllBlueprintsUnlocked", userIdString, target.displayName));
+                            Puts(Lang("AllBlueprintsUnlocked", userIdString, target.displayName));
+                        }
+                        return;
+
+                    case "reset":
+                        if (arg.Args.Length == 3)
+                        {
+                            BasePlayer target = RustCore.FindPlayer(arg.Args[1]);
+                            if (target == null)
+                            {
+                                SendReply(arg, Lang("NoPlayerFoundWith", userIdString, arg.Args[1]));
+                                return;
+                            }
+
+                            if (arg.Args[2].ToLower() == "confirm")
+                            {
+                                if (_targetNeedsPermission && !IsAdmin(target.UserIDString) && !IsUser(target.UserIDString))
                                 {
-                                    SendReply(arg, Lang(arg, "NoPermTarget", target.displayName));
+                                    SendReply(arg, Lang("NoPermTarget", userIdString, target.displayName));
                                     return;
                                 }
 
@@ -409,66 +395,45 @@ namespace Oxide.Plugins
                                 if (blueprints == null)
                                     return;
 
-                                blueprints.UnlockAll();
-                                SendReply(arg, Lang(arg, "AllBlueprintsUnlocked", target.displayName));
-                                Puts(Lang("AllBlueprintsUnlocked", target.displayName));
-                            }
-                        }
-                        return;
-
-                    case "reset":
-                        if (arg.Args.Length == 3)
-                        {
-                            BasePlayer target = FindPlayer(arg, arg.Args[1], true);
-                            if (arg.Args[2].ToLower() == "confirm")
-                            {
-                                if (target != null)
-                                {
-                                    if (_targetNeedsPermission && !IsAdmin(target) && !IsUser(target))
-                                    {
-                                        SendReply(arg, Lang(arg, "NoPermTarget", target.displayName));
-                                        return;
-                                    }
-
-                                    var blueprints = target.blueprints;
-                                    if (blueprints == null)
-                                        return;
-
-                                    blueprints.Reset();
-                                    Puts(Lang("BlueprintsReset", target.displayName));
-                                    if(arg.Connection != null)
-                                        SendReply(arg, Lang(arg, "BlueprintsReset", target.displayName));
-                                }
+                                blueprints.Reset();
+                                Puts(Lang("BlueprintsReset", target.displayName));
+                                if(arg.Connection != null)
+                                    SendReply(arg, Lang("BlueprintsReset", userIdString, target.displayName));
                             }
                             else
-                                SendReply(arg, Lang(arg, "ConfirmReset", target.displayName, arg.Args[2]));
+                                SendReply(arg, Lang("ConfirmReset", userIdString, target.displayName, arg.Args[2]));
                         }
                         else if (arg.Args.Length == 2)
                         {
-                            BasePlayer target = FindPlayer(arg, arg.Args[1], true);
-                            if(target != null)
-                                SendReply(arg, Lang(arg, "ConfirmReset", target.displayName, arg.Args[1]));
+                            BasePlayer target = RustCore.FindPlayer(arg.Args[1]);
+                            if (target == null)
+                            {
+                                SendReply(arg, Lang("NoPlayerFoundWith", userIdString, arg.Args[1]));
+                                return;
+                            }
+
+                            SendReply(arg, Lang("ConfirmReset", userIdString, target.displayName, arg.Args[1]));
                         }
                         else
-                            SendReply(arg, Lang(arg, "InvalidArgsConsole"));
+                            SendReply(arg, Lang("InvalidArgsConsole", userIdString));
                         return;
 
                     case "toggle":
                         _isActivated = !_isActivated;
                         SaveConfigData();
-                        SendReply(arg, _isActivated ? Lang(arg, "Activated") : Lang(arg, "Deactivated"));
+                        SendReply(arg, _isActivated ? Lang("Activated", userIdString) : Lang("Deactivated", userIdString));
                         return;
 
                     case "debug":
                         _debug = !_debug;
                         SaveConfigData();
-                        SendReply(arg, _debug ? Lang(arg, "DebugActivated") : Lang(arg, "DebugDeactivated"));
+                        SendReply(arg, _debug ? Lang("DebugActivated", userIdString) : Lang("DebugDeactivated", userIdString));
                         return;
 
                     case "autorestore":
                         _autoRestore = !_autoRestore;
                         SaveConfigData();
-                        SendReply(arg, _isActivated ? Lang(arg, "AutoRestoreActivated") : Lang(arg, "AutoRestoreDeactivated"));
+                        SendReply(arg, _isActivated ? Lang("AutoRestoreActivated", userIdString) : Lang("AutoRestoreDeactivated", userIdString));
                         return;
 
                     case "testautorestore":
@@ -480,24 +445,26 @@ namespace Oxide.Plugins
                     case "delsaved":
                         if (arg.Args.Length == 2)
                         {
-                            BasePlayer player = FindPlayer(arg, arg.Args[1], true);
-                            if (player != null)
+                            BasePlayer target = RustCore.FindPlayer(arg.Args[1]);
+                            if (target == null)
                             {
-                                if (!RemoveSavedBlueprints(player))
-                                    SendReply(arg, Lang(arg, "NoSavedDataFound", player.displayName));
+                                SendReply(arg, Lang("NoPlayerFoundWith", userIdString, arg.Args[1]));
                                 return;
                             }
-                            SendReply(arg, Lang(arg, "NoPlayerFound", arg.Args[1]));
+
+                            if (!RemoveSavedBlueprints(target))
+                                SendReply(arg, Lang("NoSavedDataFound", userIdString, target.displayName));
+                            return;
                         } else
                         {
-                            SendReply(arg, Lang(arg, "InvalidArgs"));
+                            SendReply(arg, Lang("InvalidArgs", userIdString));
                         }
                         return;
 
                     case "listsaved":
                         if (arg.Args.Length == 1)
                         {
-                            string replyString = Lang(arg, "SavedDataPlayerList");
+                            string replyString = Lang("SavedDataPlayerList", userIdString);
                             foreach(ulong userId in _cachedPlayerInfo.Keys)
                             {
                                 BasePlayer target = RustCore.FindPlayerById(userId);
@@ -507,34 +474,37 @@ namespace Oxide.Plugins
                         }
                         if (arg.Args.Length == 2)
                         {
-                            BasePlayer target = RustCore.FindPlayerByName(arg.Args[1]);
+                            BasePlayer target = RustCore.FindPlayer(arg.Args[1]);
                             if (target == null)
+                            {
+                                SendReply(arg, Lang("NoPlayerFoundWith", userIdString, arg.Args[1]));
                                 return;
+                            }
 
                             if(!_cachedPlayerInfo.ContainsKey(target.userID))
                             {
-                                SendReply(arg, Lang(arg, "NoSavedDataFor", target.displayName));
+                                SendReply(arg, Lang("NoSavedDataFor", userIdString, target.displayName));
                                 return;
                             }
 
                             List<String> blueprints = _cachedPlayerInfo[target.userID].UnlockedBlueprints;
                             if (blueprints == null)
                                 return;
-                            SendReply(arg, Lang(arg, "BlueprintsSaved", target.displayName) + String.Join(", ", blueprints));
+                            SendReply(arg, Lang("BlueprintsSaved", userIdString, target.displayName) + String.Join(", ", blueprints));
                         }
 
                         return;
                     case "default":
                     case "help":
-                        SendReply(arg, Lang(arg, "HelpConsoleSave"));
-                        SendReply(arg, Lang(arg, "HelpConsoleRestore"));
-                        SendReply(arg, Lang(arg, "HelpConsoleDelSaved"));
-                        SendReply(arg, Lang(arg, "HelpConsoleUnlocked"));
-                        SendReply(arg, Lang(arg, "HelpConsoleUnlockall"));
-                        SendReply(arg, Lang(arg, "HelpConsoleReset"));
-                        SendReply(arg, Lang(arg, "HelpConsoleList"));
-                        SendReply(arg, Lang(arg, "HelpListPlayerSaved"));
-                        SendReply(arg, Lang(arg, "HelpConsoleToggle"));
+                        SendReply(arg, Lang("HelpConsoleSave"), userIdString);
+                        SendReply(arg, Lang("HelpConsoleRestore"), userIdString);
+                        SendReply(arg, Lang("HelpConsoleDelSaved", userIdString));
+                        SendReply(arg, Lang("HelpConsoleUnlocked", userIdString));
+                        SendReply(arg, Lang("HelpConsoleUnlockall", userIdString));
+                        SendReply(arg, Lang("HelpConsoleReset", userIdString));
+                        SendReply(arg, Lang("HelpConsoleList", userIdString));
+                        SendReply(arg, Lang("HelpListPlayerSaved", userIdString));
+                        SendReply(arg, Lang("HelpConsoleToggle", userIdString));
                         return;
                 }
             }
@@ -543,11 +513,8 @@ namespace Oxide.Plugins
 
         #region Localization
 
-        protected override void LoadDefaultMessages() => RegisterBgMessages();
-
-        private void RegisterBgMessages()
+        protected override void LoadDefaultMessages()
         {
-            Puts("Loading default lang messages");
             lang.RegisterMessages(new Dictionary<string, string>
             {
                 //Included the color tags in some messages as a workaround to add lines at the end of the sentence.
@@ -599,28 +566,10 @@ namespace Oxide.Plugins
 
             }, this);
         }
-        private string Lang(BasePlayer player, string key, params object[] args)
-        {
-            var message = lang.GetMessage(key, this, player == null ? null : player.UserIDString);
-            if (args.Length != 0)
-                message = string.Format(message, args);
 
-            return covalence.FormatText(message);
-        }
-
-        private string Lang(ConsoleSystem.Arg arg, string key, params object[] args)
+        private string Lang(string key, string userId = null, params object[] args)
         {
-            var userId = arg?.Connection == null ? null : Convert.ToString(arg.Connection.userid);
             var message = lang.GetMessage(key, this, userId);
-            if (args.Length != 0)
-                message = string.Format(message, args);
-
-            return covalence.FormatText(message);
-        }
-
-        private string Lang(string key, params object[] args)
-        {
-            var message = lang.GetMessage(key, this);
             if (args.Length != 0)
                 message = string.Format(message, args);
 
@@ -650,7 +599,7 @@ namespace Oxide.Plugins
             _bgData.Inventories = _cachedPlayerInfo;
             _blueprintData.WriteObject(_bgData);
         }
-        private void SaveLoop() => timer.Once(900, () => { SaveData(); SaveLoop(); });
+
         private void LoadData()
         {
             try
@@ -680,8 +629,6 @@ namespace Oxide.Plugins
         class ConfigData
         {
             public string Version { get; set; }
-            public string MessagesMainColor { get; set; }
-            public string MessagesMsgColor { get; set; }
             public int AuthLevel { get; set; }
             public bool AutoRestore { get; set; }
             public bool IsActivated { get; set; }
@@ -723,8 +670,6 @@ namespace Oxide.Plugins
         {
             var config = new ConfigData
             {
-                MessagesMainColor = "<color=#FF8C00>",
-                MessagesMsgColor = "<color=#939393>",
                 AuthLevel = 2,
                 AutoRestore = false,
                 IsActivated = false,
