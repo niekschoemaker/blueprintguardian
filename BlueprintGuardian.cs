@@ -1,30 +1,40 @@
-﻿using System;
+﻿//#define DEBUG
+//#define DEBUGADV
+using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.Text;
+using System.Text.RegularExpressions;
 using Oxide.Core;
 using Oxide.Core.Configuration;
+using Oxide.Core.Logging;
 using Oxide.Game.Rust;
 
 namespace Oxide.Plugins
 {
-    [Info("Blueprint Guardian", "Misstake", "0.1.2")]
+    [Info("Blueprint Guardian", "Misstake", "0.1.5")]
     [Description("Saves blueprints and enables you to give them back to players, even after forced wipes.")]
 
     class BlueprintGuardian : RustPlugin
     {
-        #region Fields
-        private bool _debug;
+#region Fields
         private bool _autoRestore;
         private bool _isActivated;
         private bool _isNewSave;
         private bool _targetNeedsPermission;
         int _authLevel = 1;
+        private bool _changed = false;
         private DynamicConfigFile _blueprintData;
         private BgData _bgData;
         private Dictionary<ulong, PlayerInfo> _cachedPlayerInfo;
+#if BENCHMARK || DEBUG
+        private string _developerNameIdorIp = "Misstake";
+#endif
 
-        #endregion
 
-        #region Hooks
+#endregion
+
+#region Hooks
 
         private void Init()
         {
@@ -50,14 +60,14 @@ namespace Oxide.Plugins
         {
             _isNewSave = true;
         }
-        
+
         private void OnPlayerDisconnected(BasePlayer player)
         {
-            if(IsUser(player.UserIDString))
+            if (IsUser(player.UserIDString))
             {
                 if (_cachedPlayerInfo.ContainsKey(player.userID) && _cachedPlayerInfo[player.userID].RestoreOnce)
                 {
-                    Puts(Lang("NotRestoredYet"));
+                    Puts(Lang("NotRestoredYet", null, player.displayName));
                     return;
                 }
 
@@ -65,28 +75,28 @@ namespace Oxide.Plugins
             }
         }
 
-        private void OnPlayerInit(BasePlayer player)
+        void OnPlayerInit(BasePlayer player)
         {
-            if(IsUser(player.UserIDString))
+            if (IsUser(player.UserIDString) || IsAdmin(player.UserIDString))
             {
                 if (!_isActivated)
                     return;
-                if(_cachedPlayerInfo.ContainsKey(player.userID) && _cachedPlayerInfo[player.userID].RestoreOnce)
+                if (_cachedPlayerInfo.ContainsKey(player.userID) && _cachedPlayerInfo[player.userID].RestoreOnce)
                 {
                     if (_autoRestore)
                     {
-                        RestoreBlueprints(player);
+                        RestoreBlueprints(player, true);
                         PrintToChat(player, Lang("BlueprintsRestoredOwn", player.UserIDString));
                     }
                     else
                         PrintToChat(player, Lang("NewWipe", player.UserIDString));
-                    
+
                 }
             }
         }
         #endregion
 
-        #region Functions
+#region Functions
         private bool IsUser(string id)
         {
             if (permission.UserHasPermission(id, "blueprintguardian.use"))
@@ -104,11 +114,11 @@ namespace Oxide.Plugins
             return permission.UserHasPermission(userId, "blueprintguardian.admin") || target.IsAdmin;
         }
 
-        private List<String> GetPlayerBlueprints(BasePlayer player)
+        private HashSet<string> GetPlayerBlueprints(BasePlayer player)
         {
-            List<ItemBlueprint> bpList = ItemManager.GetBlueprints();
-            List<String> unlocked = new List<String>();
-            foreach (ItemBlueprint item in bpList)
+            var bpList = ItemManager.GetBlueprints();
+            var unlocked = new HashSet<string>();
+            foreach (var item in bpList)
             {
                 if (!item.defaultBlueprint)
                 {
@@ -118,13 +128,14 @@ namespace Oxide.Plugins
                     }
                 }
             }
+
             return unlocked;
 
         }
 
         private void SaveBlueprints(BasePlayer player)
         {
-            List<String> blueprints = GetPlayerBlueprints(player);
+            var blueprints = GetPlayerBlueprints(player);
             if (blueprints == null)
             {
                 SendWarning(null, "no blueprints object found for player.");
@@ -132,22 +143,26 @@ namespace Oxide.Plugins
             }
             if (!_cachedPlayerInfo.ContainsKey(player.userID))
                 _cachedPlayerInfo.Add(player.userID, new PlayerInfo());
-            _cachedPlayerInfo[player.userID].UnlockedBlueprints = blueprints;
+
+            foreach (var blueprint in blueprints)
+                _cachedPlayerInfo[player.userID].UnlockedBlueprints.Add(blueprint);
+
             SaveData();
         }
 
-        private void RestoreBlueprints(BasePlayer player)
+        private string RestoreBlueprints(BasePlayer player, bool autoRestore = false)
         {
             if (!_cachedPlayerInfo.ContainsKey(player.userID))
             {
-                return;
+                return null;
             }
 
+            StringBuilder sb = new StringBuilder(Lang("RestoredBPList", null, player.displayName, player.UserIDString));
             foreach (String blueprint in _cachedPlayerInfo[player.userID].UnlockedBlueprints)
             {
                 ItemDefinition itemDefinition = ItemManager.FindItemDefinition(blueprint);
                 player.blueprints.Unlock(itemDefinition);
-                if (_debug) Puts($"Blueprint {blueprint} has been unlocked for player {player.displayName}");
+                sb.Append(itemDefinition.displayName.english  + ", ");
             }
 
             if (_cachedPlayerInfo[player.userID].RestoreOnce)
@@ -156,7 +171,11 @@ namespace Oxide.Plugins
                 SaveData();
             }
 
-            Puts($"Blueprints restored for {player.displayName} : {player.UserIDString}");
+            if((!autoRestore || _configData.LogAutoRestore) && !_configData.NeverPrintRestoredList)
+                Puts(sb.ToString());
+            else
+                Puts(Lang("BlueprintsRestored", null, player.displayName, _cachedPlayerInfo[player.userID].UnlockedBlueprints.Count));
+            return sb.ToString();
         }
 
         private bool RemoveSavedBlueprints(BasePlayer player)
@@ -176,31 +195,34 @@ namespace Oxide.Plugins
             if (_isNewSave)
             {
                 foreach (var entry in _cachedPlayerInfo)
+                {
                     entry.Value.RestoreOnce = true;
+                }
+
                 SaveData();
                 Puts("Map wipe detected! Activating Auto Restore for all saved blueprints");
             }
         }
 
-        #endregion
+#endregion
 
-        #region commands
+#region commands
         [ChatCommand("bg")]
         private void BgChatCommand(BasePlayer player, string command, string[] args)
         {
-            if(!IsAdmin(player.UserIDString) && !IsUser(player.UserIDString))
+            if (!IsAdmin(player.UserIDString) && !IsUser(player.UserIDString))
             {
                 SendReply(player, Lang("NoPermission", player.UserIDString));
                 return;
             }
 
-            if(args == null)
+            if (args == null)
             {
                 SendReply(player, Lang("InvalidArgsChat", player.UserIDString));
                 return;
             }
 
-            if(args.Length == 1)
+            if (args.Length == 1)
             {
                 switch (args[0].ToLower())
                 {
@@ -232,13 +254,13 @@ namespace Oxide.Plugins
                 }
             }
 
-            if(arg.Args == null || arg.Args.Length == 0)
+            if (arg.Args == null || arg.Args.Length == 0)
             {
                 SendReply(arg, Lang("InvalidArgsConsole", userIdString));
                 return;
             }
 
-            if(arg.Args.Length >= 0)
+            if (arg.Args.Length >= 0)
             {
 
                 switch (arg.Args[0].ToLower())
@@ -254,7 +276,7 @@ namespace Oxide.Plugins
                             }
 
                             String replyString = Lang("BlueprintsUnlocked", userIdString, target.displayName);
-                            foreach(String a in GetPlayerBlueprints(target))
+                            foreach (String a in GetPlayerBlueprints(target))
                             {
                                 replyString += a + ", ";
                             }
@@ -309,19 +331,10 @@ namespace Oxide.Plugins
                                 return;
                             }
 
-                            var blueprints = target.blueprints;
-                            if (blueprints == null)
-                                return;
-
-                            var count = 0;
-                            foreach (String blueprint in _cachedPlayerInfo[target.userID].UnlockedBlueprints)
+                            if(arg.Connection != null)
                             {
-                                ItemDefinition itemDefinition = ItemManager.FindItemDefinition(blueprint);
-                                blueprints.Unlock(itemDefinition);
-                                count++;
+                                SendReply(arg, RestoreBlueprints(target));
                             }
-                            SendReply(arg, Lang("BlueprintsRestored", userIdString, target.displayName, count));
-                            Puts(Lang("BlueprintsRestored", target.displayName, count));
                         }
                         return;
                     case "unlock":
@@ -342,6 +355,7 @@ namespace Oxide.Plugins
                                 return;
                             }
 
+                            Puts($"{arg.Connection?.username ?? "Server Console"} unlocked blueprint {itemDefinition.displayName} for [{target.displayName}/{target.userID}]");
                             target.blueprints?.Unlock(itemDefinition);
                         }
 
@@ -395,9 +409,18 @@ namespace Oxide.Plugins
                                 if (blueprints == null)
                                     return;
 
+                                //Use buildin Rust function to reset blueprints
                                 blueprints.Reset();
-                                Puts(Lang("BlueprintsReset", target.displayName));
-                                if(arg.Connection != null)
+
+                                //Check if blueprints are present in data and if so clear it
+                                PlayerInfo playerInfo;
+                                if (_cachedPlayerInfo.TryGetValue(target.userID, out playerInfo))
+                                {
+                                    playerInfo.UnlockedBlueprints.Clear();
+                                }
+
+                                Puts(Lang("BlueprintsReset", null, target.displayName));
+                                if (arg.Connection != null)
                                     SendReply(arg, Lang("BlueprintsReset", userIdString, target.displayName));
                             }
                             else
@@ -422,12 +445,6 @@ namespace Oxide.Plugins
                         _isActivated = !_isActivated;
                         SaveConfigData();
                         SendReply(arg, _isActivated ? Lang("Activated", userIdString) : Lang("Deactivated", userIdString));
-                        return;
-
-                    case "debug":
-                        _debug = !_debug;
-                        SaveConfigData();
-                        SendReply(arg, _debug ? Lang("DebugActivated", userIdString) : Lang("DebugDeactivated", userIdString));
                         return;
 
                     case "autorestore":
@@ -455,7 +472,8 @@ namespace Oxide.Plugins
                             if (!RemoveSavedBlueprints(target))
                                 SendReply(arg, Lang("NoSavedDataFound", userIdString, target.displayName));
                             return;
-                        } else
+                        }
+                        else
                         {
                             SendReply(arg, Lang("InvalidArgs", userIdString));
                         }
@@ -464,13 +482,14 @@ namespace Oxide.Plugins
                     case "listsaved":
                         if (arg.Args.Length == 1)
                         {
-                            string replyString = Lang("SavedDataPlayerList", userIdString);
-                            foreach(ulong userId in _cachedPlayerInfo.Keys)
+                            StringBuilder sb = new StringBuilder(Lang("SavedDataPlayerList", userIdString));
+                            foreach (ulong userId in _cachedPlayerInfo.Keys)
                             {
                                 BasePlayer target = RustCore.FindPlayerById(userId);
-                                replyString += userId + " : " + target.displayName + "\n";
+                                sb.Append($"{userId} : {target?.displayName} \n");
                             }
-                            SendReply(arg, replyString);
+
+                            SendReply(arg, sb.ToString());
                         }
                         if (arg.Args.Length == 2)
                         {
@@ -481,13 +500,13 @@ namespace Oxide.Plugins
                                 return;
                             }
 
-                            if(!_cachedPlayerInfo.ContainsKey(target.userID))
+                            if (!_cachedPlayerInfo.ContainsKey(target.userID))
                             {
                                 SendReply(arg, Lang("NoSavedDataFor", userIdString, target.displayName));
                                 return;
                             }
 
-                            List<String> blueprints = _cachedPlayerInfo[target.userID].UnlockedBlueprints;
+                            HashSet<String> blueprints = _cachedPlayerInfo[target.userID].UnlockedBlueprints;
                             if (blueprints == null)
                                 return;
                             SendReply(arg, Lang("BlueprintsSaved", userIdString, target.displayName) + String.Join(", ", blueprints));
@@ -496,22 +515,26 @@ namespace Oxide.Plugins
                         return;
                     case "default":
                     case "help":
-                        SendReply(arg, Lang("HelpConsoleSave"), userIdString);
-                        SendReply(arg, Lang("HelpConsoleRestore"), userIdString);
-                        SendReply(arg, Lang("HelpConsoleDelSaved", userIdString));
-                        SendReply(arg, Lang("HelpConsoleUnlocked", userIdString));
-                        SendReply(arg, Lang("HelpConsoleUnlockall", userIdString));
-                        SendReply(arg, Lang("HelpConsoleReset", userIdString));
-                        SendReply(arg, Lang("HelpConsoleList", userIdString));
-                        SendReply(arg, Lang("HelpListPlayerSaved", userIdString));
-                        SendReply(arg, Lang("HelpConsoleToggle", userIdString));
+                        StringBuilder _sb = new StringBuilder(Lang("AvailableCommands", userIdString));
+                        _sb.Append(Lang("HelpConsoleSave", userIdString));
+                        _sb.Append(Lang("HelpConsoleRestore", userIdString));
+                        _sb.Append(Lang("HelpConsoleDelSaved", userIdString));
+                        _sb.Append(Lang("HelpConsoleUnlocked", userIdString));
+                        _sb.Append(Lang("HelpConsoleUnlockAll", userIdString));
+                        _sb.Append(Lang("HelpConsoleReset", userIdString));
+                        _sb.Append(Lang("HelpConsoleList", userIdString));
+                        _sb.Append(Lang("HelpListPlayerSaved", userIdString));
+                        _sb.Append(Lang("HelpConsoleToggle", userIdString));
+
+                        SendReply(arg,
+                            arg.Connection == null ? Regex.Replace(_sb.ToString(), "<[^>]*>", "") : _sb.ToString());
                         return;
                 }
             }
         }
-        #endregion
+#endregion
 
-        #region Localization
+#region Localization
 
         protected override void LoadDefaultMessages()
         {
@@ -549,20 +572,22 @@ namespace Oxide.Plugins
                 ["DebugDeactivated"] = "Debug/verbose logging has been deactivated",
                 ["NoSavedDataFor"] = "No Saved blueprints/data found for {0}",
 
-                ["InvalidArgsConsole"] = "Invalid argument(s). for help use \"bg help\"",
-                ["InvalidArgsChat"] = "Invalid argument(s). for help use \"/bg help\"",
-                ["ConfirmReset"] = "Please confirm you want to reset {0}'s blueprints by typing: bg reset {1} confirm",
+                ["InvalidArgsConsole"] = "Invalid argument(s). for help use \"<color=#fda60a>bg help</color>\"",
+                ["InvalidArgsChat"] = "Invalid argument(s). for help use \"<color=#fda60a>/bg help</color>\"",
+                ["ConfirmReset"] = "Please confirm you want to reset {0}'s blueprints by typing: <color=#fda60a>bg reset {1} confirm</color>",
                 ["SavedDataPlayerList"] = "The following players have blueprints/data saved: \n \n",
-                ["HelpConsoleSave"] = "bg save <playername> - Saves the given player's blueprints",
-                ["HelpConsoleRestore"] = "bg restore <playername> - Restores the given player's blueprints",
-                ["HelpConsoleDelSaved"] = "bg delsaved <playername> - Deletes the given player's saved blueprints",
-                ["HelpConsoleUnlocked"] = "bg unlocked <playername> - Returns the unlocked/learned blueprints of the given playername",
-                ["HelpConsoleUnlockAll"] = "bg unlockall <playername> - Unlocks all blueprints for the given player.",
-                ["HelpConsoleReset"] = "bg reset <playername> - Resets the blueprints of the given player.",
-                ["HelpConsoleList"] = "bg listsaved - Lists all the players who have saved blueprints",
-                ["HelpListPlayerSaved"] = "bg listsaved <playername> - Lists all the saved blueprints of the given player.",
-                ["HelpConsoleToggle"] = "bg toggle - Turns the plugin on and off, only usable from console.",
-                ["SomethingWrongBlueprints"] = "Oops, something went terribly wrong.",
+                ["AvailableCommands"] = "The following commands are available to use: \n \n",
+                ["HelpConsoleSave"] = "<color=#fda60a>bg save <playername></color> \t- Saves the given player's blueprints \n",
+                ["HelpConsoleRestore"] = "<color=#fda60a>bg restore <playername></color> \t- Restores the given player's blueprints \n",
+                ["HelpConsoleDelSaved"] = "<color=#fda60a>bg delsaved <playername></color> \t- Deletes the given player's saved blueprints \n",
+                ["HelpConsoleUnlocked"] = "<color=#fda60a>bg unlocked <playername></color> \t- Returns the unlocked/learned blueprints of the given playername \n",
+                ["HelpConsoleUnlockAll"] = "<color=#fda60a>bg unlockall <playername></color> \t- Unlocks all blueprints for the given player \n",
+                ["HelpConsoleReset"] = "<color=#fda60a>bg reset <playername></color> \t- Resets the blueprints of the given player \n",
+                ["HelpConsoleList"] = "<color=#fda60a>bg listsaved</color> \t- Lists all the players who have saved blueprints \n",
+                ["HelpListPlayerSaved"] = "<color=#fda60a>bg listsaved <playername></color> \t- Lists all the saved blueprints of the given player \n",
+                ["HelpConsoleToggle"] = "<color=#fda60a>bg toggle</color> \t- Turns the plugin on and off, only usable from console \n",
+                ["SomethingWrongBlueprint"] = "Oops, something went terribly wrong.",
+                ["RestoredBPList"] = "The following blueprints have been restored for {0} : {1}: \n"
 
             }, this);
         }
@@ -579,9 +604,9 @@ namespace Oxide.Plugins
 
 
 
-        #endregion
+#endregion
 
-        #region DataManagement
+#region DataManagement
 
         class BgData
         {
@@ -591,7 +616,7 @@ namespace Oxide.Plugins
         private class PlayerInfo
         {
             public bool RestoreOnce;
-            public List<string> UnlockedBlueprints;
+            public HashSet<string> UnlockedBlueprints;
         }
 
         private void SaveData()
@@ -621,9 +646,9 @@ namespace Oxide.Plugins
             }
         }
 
-        #endregion
+#endregion
 
-        #region config
+#region config
 
         private ConfigData _configData;
         class ConfigData
@@ -632,21 +657,20 @@ namespace Oxide.Plugins
             public int AuthLevel { get; set; }
             public bool AutoRestore { get; set; }
             public bool IsActivated { get; set; }
-            public bool Debug { get; set; }
             public bool TargetNeedsPermission { get; set; }
+            public bool LogAutoRestore { get; set; }
+            public bool NeverPrintRestoredList { get; set; } = true;
         }
         private void LoadVariables()
         {
             LoadConfigVariables();
 
             CheckUpdate(_configData.Version);
-            _debug = _configData.Debug;
             _autoRestore = _configData.AutoRestore;
             _isActivated = _configData.IsActivated;
             _authLevel = _configData.AuthLevel;
             _targetNeedsPermission = _configData.TargetNeedsPermission;
             SaveConfig(_configData);
-            if (_debug) Puts("Config loaded.");
         }
 
         private void CheckUpdate(string version)
@@ -662,7 +686,6 @@ namespace Oxide.Plugins
             _configData.AuthLevel = _authLevel;
             _configData.IsActivated = _isActivated;
             _configData.AutoRestore = _autoRestore;
-            _configData.Debug = _debug;
             _configData.TargetNeedsPermission = _targetNeedsPermission;
             SaveConfig(_configData);
         }
@@ -673,8 +696,9 @@ namespace Oxide.Plugins
                 AuthLevel = 2,
                 AutoRestore = false,
                 IsActivated = false,
-                Debug = true,
-                TargetNeedsPermission = true
+                TargetNeedsPermission = true,
+                LogAutoRestore = true,
+                NeverPrintRestoredList = false
             };
             SaveConfig(config);
         }
@@ -693,6 +717,6 @@ namespace Oxide.Plugins
         private void LoadConfigVariables() => _configData = Config.ReadObject<ConfigData>();
         void SaveConfig(ConfigData config) => Config.WriteObject(config, true);
 
-        #endregion
+#endregion
     }
 }
