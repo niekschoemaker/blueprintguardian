@@ -12,7 +12,7 @@ using Oxide.Game.Rust;
 
 namespace Oxide.Plugins
 {
-    [Info("Blueprint Guardian", "Misstake", "0.1.5")]
+    [Info("Blueprint Guardian", "Misstake", "0.1.6")]
     [Description("Saves blueprints and enables you to give them back to players, even after forced wipes.")]
 
     class BlueprintGuardian : RustPlugin
@@ -22,12 +22,13 @@ namespace Oxide.Plugins
         private bool _isActivated;
         private bool _isNewSave;
         private bool _targetNeedsPermission;
-        int _authLevel = 1;
-        private bool _changed = false;
         private DynamicConfigFile _blueprintData;
         private BgData _bgData;
         private Dictionary<ulong, PlayerInfo> _cachedPlayerInfo;
+        private const string PlayerPermission = "blueprintguardian.use";
+        private const string AdminPermission = "blueprintguardian.admin";
 #if BENCHMARK || DEBUG
+//Is normally not in use, I normally log testing information to client console so is here for that reason.
         private string _developerNameIdorIp = "Misstake";
 #endif
 
@@ -38,13 +39,9 @@ namespace Oxide.Plugins
 
         private void Init()
         {
-            _blueprintData = Interface.Oxide.DataFileSystem.GetFile("BlueprintGuardian");
-        }
-
-        private void OnServerInitialized()
-        {
-            permission.RegisterPermission("blueprintguardian.use", this);
-            permission.RegisterPermission("blueprintguardian.admin", this);
+            _blueprintData = Interface.Oxide.DataFileSystem.GetFile(this.Name);
+            permission.RegisterPermission(PlayerPermission, this);
+            permission.RegisterPermission(AdminPermission, this);
             CheckProtocol();
             LoadVariables();
             LoadData();
@@ -65,9 +62,12 @@ namespace Oxide.Plugins
         {
             if (IsUser(player.UserIDString))
             {
+                //Check if blueprints still have to be restored and don't save Blueprint if this is the case.
                 if (_cachedPlayerInfo.ContainsKey(player.userID) && _cachedPlayerInfo[player.userID].RestoreOnce)
                 {
-                    Puts(Lang("NotRestoredYet", null, player.displayName));
+                    
+                    if(!_configData.DisableAllLogging && _configData.NotifyNotRestoredOnLogout)
+                        Puts(Lang("NotRestoredYet", null, player.displayName));
                     return;
                 }
 
@@ -77,7 +77,7 @@ namespace Oxide.Plugins
 
         void OnPlayerInit(BasePlayer player)
         {
-            if (IsUser(player.UserIDString) || IsAdmin(player.UserIDString))
+            if (IsUser(player.UserIDString) || IsAdmin(player))
             {
                 if (!_isActivated)
                     return;
@@ -97,22 +97,12 @@ namespace Oxide.Plugins
         #endregion
 
 #region Functions
-        private bool IsUser(string id)
-        {
-            if (permission.UserHasPermission(id, "blueprintguardian.use"))
-                return true;
 
-            return false;
-        }
+        private bool IsUser(string id) => permission.UserHasPermission(id, PlayerPermission);
 
-        private bool IsAdmin(string userId)
-        {
-            BasePlayer target = RustCore.FindPlayerByIdString(userId);
-            if (target == null)
-                return permission.UserHasPermission(userId, "blueprintguardian.admin");
+        private bool IsAdmin(string userId) => permission.UserHasPermission(userId, AdminPermission);
 
-            return permission.UserHasPermission(userId, "blueprintguardian.admin") || target.IsAdmin;
-        }
+        private bool IsAdmin(BasePlayer player) => permission.UserHasPermission(player.UserIDString, AdminPermission) || player.IsAdmin;
 
         private HashSet<string> GetPlayerBlueprints(BasePlayer player)
         {
@@ -170,11 +160,15 @@ namespace Oxide.Plugins
                 _cachedPlayerInfo[player.userID].RestoreOnce = false;
                 SaveData();
             }
+            // if logging is disabled just skip all the checks and return StringBuilder directly
+            if(_configData.DisableAllLogging)
+                return sb.ToString();
 
-            if((!autoRestore || _configData.LogAutoRestore) && !_configData.NeverPrintRestoredList)
+            if ((!autoRestore || _configData.LogAutoRestore) && !_configData.NeverPrintRestoredList)
                 Puts(sb.ToString());
             else
                 Puts(Lang("BlueprintsRestored", null, player.displayName, _cachedPlayerInfo[player.userID].UnlockedBlueprints.Count));
+
             return sb.ToString();
         }
 
@@ -200,7 +194,8 @@ namespace Oxide.Plugins
                 }
 
                 SaveData();
-                Puts("Map wipe detected! Activating Auto Restore for all saved blueprints");
+                if(!_configData.DisableAllLogging)
+                    Puts("Map wipe detected! Activating Auto Restore for all saved blueprints");
             }
         }
 
@@ -210,7 +205,7 @@ namespace Oxide.Plugins
         [ChatCommand("bg")]
         private void BgChatCommand(BasePlayer player, string command, string[] args)
         {
-            if (!IsAdmin(player.UserIDString) && !IsUser(player.UserIDString))
+            if (!IsAdmin(player) && !IsUser(player.UserIDString))
             {
                 SendReply(player, Lang("NoPermission", player.UserIDString));
                 return;
@@ -247,7 +242,7 @@ namespace Oxide.Plugins
             string userIdString = arg.Connection?.userid.ToString();
             if (arg.Connection != null)
             {
-                if (arg.Connection.authLevel < _authLevel && !IsAdmin(arg.Connection.userid.ToString()))
+                if (!arg.IsAdmin && !IsAdmin(arg.Connection.userid.ToString()))
                 {
                     SendReply(arg, Lang("NoPermission", userIdString));
                     return;
@@ -294,7 +289,7 @@ namespace Oxide.Plugins
                                 SendReply(arg, Lang("NoPlayerFoundWith", userIdString, arg.Args[1]));
                                 return;
                             }
-                            if (_targetNeedsPermission && !IsAdmin(target.UserIDString) && !IsUser(target.UserIDString))
+                            if (_targetNeedsPermission && !IsAdmin(target) && !IsUser(target.UserIDString))
                             {
                                 SendReply(arg, Lang("NoPermTarget", userIdString, target.displayName));
                                 return;
@@ -319,7 +314,7 @@ namespace Oxide.Plugins
                                 return;
                             }
 
-                            if (_targetNeedsPermission && !IsAdmin(target.UserIDString) && !IsUser(target.UserIDString))
+                            if (_targetNeedsPermission && !IsAdmin(target) && !IsUser(target.UserIDString))
                             {
                                 SendReply(arg, Lang("NoPermTarget", userIdString, target.displayName));
                                 return;
@@ -355,7 +350,8 @@ namespace Oxide.Plugins
                                 return;
                             }
 
-                            Puts($"{arg.Connection?.username ?? "Server Console"} unlocked blueprint {itemDefinition.displayName} for [{target.displayName}/{target.userID}]");
+                            if(!_configData.DisableAllLogging)
+                                Puts($"{arg.Connection?.username ?? "Server Console"} unlocked blueprint {itemDefinition.displayName} for [{target.displayName}/{target.userID}]");
                             target.blueprints?.Unlock(itemDefinition);
                         }
 
@@ -371,7 +367,7 @@ namespace Oxide.Plugins
                                 return;
                             }
 
-                            if (_targetNeedsPermission && !IsAdmin(target.UserIDString) && !IsUser(target.UserIDString))
+                            if (_targetNeedsPermission && !IsAdmin(target) && !IsUser(target.UserIDString))
                             {
                                 SendReply(arg, Lang("NoPermTarget", userIdString, target.displayName));
                                 return;
@@ -383,7 +379,8 @@ namespace Oxide.Plugins
 
                             blueprints.UnlockAll();
                             SendReply(arg, Lang("AllBlueprintsUnlocked", userIdString, target.displayName));
-                            Puts(Lang("AllBlueprintsUnlocked", userIdString, target.displayName));
+                            if(!_configData.DisableAllLogging)
+                                Puts(Lang("AllBlueprintsUnlocked", userIdString, target.displayName));
                         }
                         return;
 
@@ -399,7 +396,7 @@ namespace Oxide.Plugins
 
                             if (arg.Args[2].ToLower() == "confirm")
                             {
-                                if (_targetNeedsPermission && !IsAdmin(target.UserIDString) && !IsUser(target.UserIDString))
+                                if (_targetNeedsPermission && !IsAdmin(target) && !IsUser(target.UserIDString))
                                 {
                                     SendReply(arg, Lang("NoPermTarget", userIdString, target.displayName));
                                     return;
@@ -419,7 +416,8 @@ namespace Oxide.Plugins
                                     playerInfo.UnlockedBlueprints.Clear();
                                 }
 
-                                Puts(Lang("BlueprintsReset", null, target.displayName));
+                                if(!_configData.DisableAllLogging)
+                                    Puts(Lang("BlueprintsReset", null, target.displayName));
                                 if (arg.Connection != null)
                                     SendReply(arg, Lang("BlueprintsReset", userIdString, target.displayName));
                             }
@@ -616,7 +614,7 @@ namespace Oxide.Plugins
         private class PlayerInfo
         {
             public bool RestoreOnce;
-            public HashSet<string> UnlockedBlueprints;
+            public HashSet<string> UnlockedBlueprints = new HashSet<string>();
         }
 
         private void SaveData()
@@ -631,17 +629,18 @@ namespace Oxide.Plugins
             {
                 _bgData = _blueprintData.ReadObject<BgData>();
                 _cachedPlayerInfo = _bgData.Inventories;
-                Puts("Loading data.");
-
+#if DEBUG
+                Puts("Blueprint data loaded");
+#endif
             }
             catch
             {
-                Puts("Couldn't load player data, creating new datafile");
+                Puts("Couldn't load player blueprint data, creating new datafile");
                 _bgData = new BgData();
             }
             if (_bgData == null)
             {
-                Puts("Couldn't load player data, creating new datafile");
+                Puts("Couldn't load player blueprint data, creating new datafile");
                 _bgData = new BgData();
             }
         }
@@ -660,6 +659,8 @@ namespace Oxide.Plugins
             public bool TargetNeedsPermission { get; set; }
             public bool LogAutoRestore { get; set; }
             public bool NeverPrintRestoredList { get; set; } = true;
+            public bool NotifyNotRestoredOnLogout { get; set; }
+            public bool DisableAllLogging { get; set; }
         }
         private void LoadVariables()
         {
@@ -668,7 +669,6 @@ namespace Oxide.Plugins
             CheckUpdate(_configData.Version);
             _autoRestore = _configData.AutoRestore;
             _isActivated = _configData.IsActivated;
-            _authLevel = _configData.AuthLevel;
             _targetNeedsPermission = _configData.TargetNeedsPermission;
             SaveConfig(_configData);
         }
@@ -683,7 +683,6 @@ namespace Oxide.Plugins
 
         private void SaveConfigData()
         {
-            _configData.AuthLevel = _authLevel;
             _configData.IsActivated = _isActivated;
             _configData.AutoRestore = _autoRestore;
             _configData.TargetNeedsPermission = _targetNeedsPermission;
@@ -693,22 +692,26 @@ namespace Oxide.Plugins
         {
             var config = new ConfigData
             {
-                AuthLevel = 2,
                 AutoRestore = false,
                 IsActivated = false,
                 TargetNeedsPermission = true,
                 LogAutoRestore = true,
-                NeverPrintRestoredList = false
+                NeverPrintRestoredList = false,
+                NotifyNotRestoredOnLogout = true,
+                DisableAllLogging = false
             };
             SaveConfig(config);
         }
 
+        // Can be used to upgrade configuration if options are added to config file
         protected void ReloadConfig()
         {
             Puts($"Upgrading configuration file from {_configData.Version} to {Version.ToString()}");
             _configData.Version = Version.ToString();
 
             // NEW CONFIGURATION OPTIONS HERE
+            _configData.NotifyNotRestoredOnLogout = true;
+            _configData.DisableAllLogging = false;
             // END NEW CONFIGURATION OPTIONS
 
             SaveConfig();
