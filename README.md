@@ -42,6 +42,28 @@ If the plugin is turned on and autoRestore is also turned on (by default both of
 
 ## Configuration
 
+* Version - Do not touch this value, is used for internal handling of updates
+* AutoRestore true/false - Wether blueprints should automatically be restored after a wipe
+* IsActivated true/false - Wether the plugin should allow chat commands, AutoRestore and auto save
+* TargetNeedsPermission true/false - Blocks admin commands on players who do not have the permission
+* LogAutoRestore true/false - Wether the auto restoring of blueprint gets logged to the console
+* NeverPrintRestoredList true/false - Wether the full list of blueprints which have been restored for a player gets printed
+* NotifyNotRestoredOnLogout true/false - Wether you get a message in the console if a player has logged of but hasn't yet restored their blueprints (if AutoRestore is false)
+* DisableAllLogging true/false - Disables all logging of the plugin, besides warnings and errors.
+
+**Default Config:**
+```
+{
+  "Version": "0.1.6",
+  "AutoRestore": true,
+  "IsActivated": true,
+  "TargetNeedsPermission": true,
+  "LogAutoRestore": false,
+  "NeverPrintRestoredList": true,
+  "NotifyNotRestoredOnLogout": true,
+  "DisableAllLogging": false
+}
+```
 ## Stored Data
 
 This plugin stores data in the `data/BlueprintGuardian.json` file to keep track of unlocked blueprints, even after wipes. This file should not be deleted in most cases unless you want the unlocked blueprints stored there to be lost.
