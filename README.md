@@ -69,3 +69,54 @@ If the plugin is turned on and autoRestore is also turned on (by default both of
 This plugin stores data in the `data/BlueprintGuardian.json` file to keep track of unlocked blueprints, even after wipes. This file should not be deleted in most cases unless you want the unlocked blueprints stored there to be lost.
 
 ## Localization
+Most if not all messages support localization. The messages should be pretty self explanatory.
+
+**Default lang file:**
+```
+{
+  "NoPermission": "You don't have permission to use this command.",
+  "NoPermTarget": "{0} Doesn't have the required permissions.",
+  "BlueprintsSaved": "{0} has the following blueprints saved: \n \n",
+  "BlueprintsRestoredOwn": "Your blueprints have been restored.",
+  "BlueprintsSavedOwn": "Your blueprints have been saved.",
+  "BlueprintsRestored": "{1} blueprints have been restored for {0}.",
+  "BlueprintsReset": "Blueprints of {0} have been reset.",
+  "BlueprintsUnlocked": "{0} has the following blueprints unlocked: \n \n",
+  "AllBlueprintsUnlocked": "All blueprints for {0} have been unlocked.",
+  "BlueprintsSavedTarget": "Blueprints of {0} have succesfully been saved.",
+  "NotRestoredYet": "{0} has disconnected and hasn't restored his blueprints yet, type \" bg restore {0}\" to do it for him/her",
+  "NewWipe": "There's a new wipe detected, use \"/bg restore\" to restore your blueprints.",
+  "NoItemFound": "Can't find an item with that shortname.",
+  "PluginNotActivated": "Blueprint Guardian isn't activated, use <color=blue>\"bg toggle\"</color=blue> to activate it.",
+  "PluginDeactivated": "Blueprint Guardian has been deactivated.",
+  "PluginActivated": "Blueprint Guardian has been activated.",
+  "NoSavedDataFound": "No Saved Blueprints found for {0}.",
+  "NoPlayerFoundWith": "No player found with {0} in their name.",
+  "NoPlayerFound": "No player found with given name.",
+  "MultiplePlayersFoundWith": "No player found with {0} in their name.",
+  "MultiplePlayersFound": "Multiple players found with given name.",
+  "Activated": "Blueprint Guardian has been activated.",
+  "Deactivated": "Blueprint Guardian has been deactivated.",
+  "AutoRestoreActivated": "Auto restore has been activated.",
+  "AutoRestoreDeactivated": "Auto restore has been deactivated.",
+  "DebugActivated": "Debug/verbose logging has been activated",
+  "DebugDeactivated": "Debug/verbose logging has been deactivated",
+  "NoSavedDataFor": "No Saved blueprints/data found for {0}",
+  "InvalidArgsConsole": "Invalid argument(s). for help use \"<color=#fda60a>bg help</color>\"",
+  "InvalidArgsChat": "Invalid argument(s). for help use \"<color=#fda60a>/bg help</color>\"",
+  "ConfirmReset": "Please confirm you want to reset {0}'s blueprints by typing: <color=#fda60a>bg reset {1} confirm</color>",
+  "SavedDataPlayerList": "The following players have blueprints/data saved: \n \n",
+  "AvailableCommands": "The following commands are available to use: \n \n",
+  "HelpConsoleSave": "<color=#fda60a>bg save <playername></color> \t- Saves the given player's blueprints \n",
+  "HelpConsoleRestore": "<color=#fda60a>bg restore <playername></color> \t- Restores the given player's blueprints \n",
+  "HelpConsoleDelSaved": "<color=#fda60a>bg delsaved <playername></color> \t- Deletes the given player's saved blueprints \n",
+  "HelpConsoleUnlocked": "<color=#fda60a>bg unlocked <playername></color> \t- Returns the unlocked/learned blueprints of the given playername \n",
+  "HelpConsoleUnlockAll": "<color=#fda60a>bg unlockall <playername></color> \t- Unlocks all blueprints for the given player \n",
+  "HelpConsoleReset": "<color=#fda60a>bg reset <playername></color> \t- Resets the blueprints of the given player \n",
+  "HelpConsoleList": "<color=#fda60a>bg listsaved</color> \t- Lists all the players who have saved blueprints \n",
+  "HelpListPlayerSaved": "<color=#fda60a>bg listsaved <playername></color> \t- Lists all the saved blueprints of the given player \n",
+  "HelpConsoleToggle": "<color=#fda60a>bg toggle</color> \t- Turns the plugin on and off, only usable from console \n",
+  "SomethingWrongBlueprint": "Oops, something went terribly wrong.",
+  "RestoredBPList": "The following blueprints have been restored for {0} : {1}: \n"
+}
+```
