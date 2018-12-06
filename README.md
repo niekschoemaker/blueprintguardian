@@ -55,8 +55,8 @@ If the plugin is turned on and autoRestore is also turned on (by default both of
 ```
 {
   "Version": "0.1.6",
-  "AutoRestore": true,
-  "IsActivated": true,
+  "AutoRestore": false,
+  "IsActivated": false,
   "TargetNeedsPermission": true,
   "LogAutoRestore": false,
   "NeverPrintRestoredList": true,
